@@ -117,22 +117,34 @@ export default function Home() {
   };
   const handleExport = async () => {
     if (!result) return alert("Run tests first");
-  
+    const passed = result.execution?.filter(t => t.success).length || 0;
+    const failed = result.execution?.filter(t => !t.success).length || 0;
     try {
-      const reportData = {
-        totalTests: result.meta?.totalTests || 0,
-        passed: result.execution?.numPassedTests || 0,
-        failed: result.execution?.numFailedTests || 0,
-        tests: result.execution?.testResults?.[0]?.assertionResults?.map((t) => ({
-          name: t.title,
-          method: "POST",
-          endpoint: "N/A",
-          expectedStatus: "N/A",
-          actualStatus: t.status === "passed" ? 200 : 500
-        })) || []
-      };
+        const reportData = {
+            totalTests: result.meta?.totalTests || 0,
+            passed,
+            failed,
+          
+            tests: result.execution?.map((t) => {
+              return {
+                name: t.name,
+                method: t.method || "GET",
+                endpoint: t.endpoint || "N/A",
+          
+                // ✅ IMPORTANT FIX
+                actualStatus: t.success
+                  ? 200
+                  : t.actual || (t.error?.includes("404") ? 404 : 500),
+          
+                expectedStatus: t.expected || "N/A"
+              };
+            }) || []
+        };
   
-      const html = generateReportHTML(reportData);
+        const html = generateReportHTML({
+            ...reportData,
+            insights: result.insights
+        });
   
       const res = await fetch('http://localhost:3000/api/generate-pdf', {
         method: 'POST',
@@ -153,12 +165,13 @@ export default function Home() {
       alert("Failed to export PDF");
     }
   };
-  const chartData = result
-    ? [
-        { name: "Passed", value: result.execution?.numPassedTests },
-        { name: "Failed", value: result.execution?.numFailedTests }
-      ]
-    : [];
+    const passed = result?.execution?.filter(t => t.success).length || 0;
+    const failed = result?.execution?.filter(t => !t.success).length || 0;
+
+    const chartData = [
+    { name: "Passed", value: passed },
+    { name: "Failed", value: failed }
+    ];
 
   return (
     <div style={layout}>
@@ -383,79 +396,148 @@ export default function Home() {
                     </div>
                   );
                 })} */}
-                {result.execution?.testResults?.[0]?.assertionResults?.map((t, i) => {
-                  const error = t.failureMessages?.[0] || "";
-                  const insight = t.insight; // 👈 IMPORTANT (from backend now)
+                {result?.execution?.map((t, i) => {
+                    const insight = result?.insights?.testInsights?.find(
+                        x => x.testName === t.name
+                    );
 
-                  return (
-                    <div
-                      key={i}
-                      style={{
-                        ...testCard,
-                        animation: `fadeIn 0.4s ease forwards`,
-                        animationDelay: `${i * 0.05}s`,
-                        borderLeft: `4px solid ${
-                          t.status === "passed" ? "#22c55e" : "#ef4444"
-                        }`
-                      }}
-                    >
-                      {/* Title */}
-                      <div style={{ fontWeight: "bold" }}>{t.title}</div>
-
-                      {/* Status Badge */}
-                      <span style={{
-                        padding: "4px 10px",
-                        borderRadius: 999,
-                        fontSize: 11,
-                        background:
-                          t.status === "passed"
-                            ? "rgba(34,197,94,0.15)"
-                            : "rgba(239,68,68,0.15)",
-                        color:
-                          t.status === "passed"
-                            ? "#22c55e"
-                            : "#ef4444"
-                      }}>
-                        {t.status.toUpperCase()}
-                      </span>
-
-                      {/* ❌ Error Message */}
-                      {t.status === "failed" && (
-                        <div style={{
-                          fontSize: 12,
-                          marginTop: 6,
-                          color: "#f87171"
-                        }}>
-                          {error.slice(0, 120)}
+                    return (
+                        <div
+                          key={i}
+                          style={{
+                            ...testCard,
+                            borderLeft: `4px solid ${
+                              t.success ? "#22c55e" : "#ef4444"
+                            }`
+                          }}
+                        >
+                          <div style={{ fontWeight: "bold" }}>{t.name}</div>
+                    
+                          <span
+                            style={{
+                              padding: "4px 10px",
+                              borderRadius: 999,
+                              fontSize: 11,
+                              background: t.success
+                                ? "rgba(34,197,94,0.15)"
+                                : "rgba(239,68,68,0.15)",
+                              color: t.success ? "#22c55e" : "#ef4444"
+                            }}
+                          >
+                            {t.success ? "PASSED" : "FAILED"}
+                          </span>
+                    
+                          {/* ❌ Error */}
+                          {!t.success && t.error && (
+                            <div style={{ fontSize: 12, marginTop: 6, color: "#f87171" }}>
+                              {t.error.slice(0, 150)}
+                            </div>
+                          )}
+                    
+                          {/* 🧠 Insight */}
+                          {!t.success && insight && (
+                            <div
+                              style={{
+                                marginTop: 8,
+                                padding: 10,
+                                background: "rgba(250,204,21,0.08)",
+                                borderRadius: 8,
+                                fontSize: 12
+                              }}
+                            >
+                              <div><b>⚠ Issue:</b> {insight.issue}</div>
+                              <div><b>🧠 Reason:</b> {insight.reason}</div>
+                              <div><b>🛠 Fix:</b> {insight.fix}</div>
+                            </div>
+                          )}
                         </div>
-                      )}
-
-                      {/* 🧠 NEW INSIGHT BLOCK (ADD HERE 👇) */}
-                      {t.status === "failed" && insight && (
-                        <div style={{
-                          marginTop: 8,
-                          padding: 10,
-                          background: "rgba(250,204,21,0.08)",
-                          borderRadius: 8,
-                          fontSize: 12,
-                          border: "1px solid rgba(250,204,21,0.2)"
-                        }}>
-                          <div><b>⚠ Issue:</b> {insight.issue}</div>
-                          <div><b>🧠 Reason:</b> {insight.reason}</div>
-                          <div><b>🛠 Fix:</b> {insight.fix}</div>
-
-                          <div style={{
-                            marginTop: 5,
-                            fontSize: 11,
-                            color: "#94a3b8"
-                          }}>
-                            Confidence: {(insight.confidence * 100).toFixed(0)}% | {insight.source}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
+                      );
                 })}
+                {/* 🧠 INSIGHTS DASHBOARD (NEW) */}
+                {result?.insights?.summary && (
+                <>
+                    {/* Summary Upgrade */}
+                    <h4 style={{ marginTop: 25 }}>📊 Test Summary</h4>
+                    <div style={grid}>
+                    <Metric label="Total" value={result.insights.summary?.total} />
+                    <Metric label="Passed" value={result.insights.summary?.passed} />
+                    <Metric label="Failed" value={result.insights.summary?.failed} />
+                    <Metric label="Success %" value={result.insights.summary?.successRate} />
+                    </div>
+
+                    {/* 🔥 PATTERNS */}
+                    <h4 style={{ marginTop: 25 }}>🔥 Failure Patterns</h4>
+                    {result.insights.patterns?.length > 0 ? (
+                    result.insights.patterns.map((p, i) => (
+                        <div
+                        key={i}
+                        style={{
+                            marginTop: 10,
+                            padding: 12,
+                            borderRadius: 10,
+                            background:
+                            p.severity === "high"
+                                ? "rgba(239,68,68,0.1)"
+                                : "rgba(250,204,21,0.1)",
+                            border:
+                            p.severity === "high"
+                                ? "1px solid rgba(239,68,68,0.3)"
+                                : "1px solid rgba(250,204,21,0.3)"
+                        }}
+                        >
+                        <b>{p.message}</b>
+                        </div>
+                    ))
+                    ) : (
+                    <p style={muted}>No patterns detected</p>
+                    )}
+
+                    {/* 🧪 COVERAGE */}
+                    <h4 style={{ marginTop: 25 }}>🧪 Missing Coverage</h4>
+                    {result.insights.coverage?.length > 0 ? (
+                    result.insights.coverage.map((c, i) => (
+                        <div
+                        key={i}
+                        style={{
+                            marginTop: 8,
+                            padding: 10,
+                            background: "rgba(59,130,246,0.1)",
+                            borderRadius: 8,
+                            fontSize: 13
+                        }}
+                        >
+                        ⚠ {c}
+                        </div>
+                    ))
+                    ) : (
+                    <p style={muted}>Coverage looks good</p>
+                    )}
+
+                    {/* ⚠️ TEST QUALITY */}
+                    <h4 style={{ marginTop: 25 }}>⚠️ Test Quality Issues</h4>
+                    {result.insights.testQuality?.length > 0 ? (
+                    result.insights.testQuality.map((q, i) => (
+                        <div
+                        key={i}
+                        style={{
+                            marginTop: 10,
+                            padding: 12,
+                            background: "rgba(168,85,247,0.1)",
+                            borderRadius: 10,
+                            fontSize: 13,
+                            border: "1px solid rgba(168,85,247,0.3)"
+                        }}
+                        >
+                        <div><b>Test:</b> {q.test}</div>
+                        <div><b>Problem:</b> {q.problem}</div>
+                        <div><b>Suggestion:</b> {q.suggestion}</div>
+                        </div>
+                    ))
+                    ) : (
+                    <p style={muted}>No major issues detected</p>
+                    )}
+                </>
+                )}
                               </>
                             )}
                           </div>
