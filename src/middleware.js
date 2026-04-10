@@ -5,10 +5,10 @@ export function middleware(request) {
 
   // Check if user is hitting /dashboard
   if (url.pathname.startsWith("/dashboard")) {
-    const protocol = request.headers.get("x-forwarded-proto") || "https";
+    const protocol = request.headers.get("x-forwarded-proto") || "http";
 
     // If HTTPS → redirect to coming soon page
-    if (protocol === "http") {
+    if (protocol === "https") {
       return NextResponse.redirect(new URL("/coming-soon", request.url));
     }
   }
